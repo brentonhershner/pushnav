@@ -75,9 +75,13 @@ private let PU_GAIN: UInt8 = 0x04
 private let AE_MODE_MANUAL: UInt8 = 0x01
 private let AE_MODE_AUTO: UInt8 = 0x02
 
-// openaicam VID/PID
-let OPENAICAM_VID: Int = 0x32E6
-let OPENAICAM_PID: Int = 0x9251
+// // openaicam VID/PID
+// let OPENAICAM_VID: Int = 0x32E6
+// let OPENAICAM_PID: Int = 0x9251
+
+// Arducam OV9281 VID/PID
+let OPENAICAM_VID: Int = 0x0c45
+let OPENAICAM_PID: Int = 0x6366
 
 // MARK: - USB Request Type Builder
 

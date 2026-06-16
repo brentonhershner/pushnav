@@ -31,7 +31,8 @@ print("EVF Camera Server v\(serverVersion)")
 // MARK: - 1. Initialize UVC Controller
 
 guard let uvc = UVCController(vendorID: OPENAICAM_VID, productID: OPENAICAM_PID) else {
-    fputs("FATAL: Camera not found. Ensure openaicam is connected.\n", stderr)
+    // fputs("FATAL: Camera not found. Ensure openaicam is connected.\n", stderr)
+    fputs("FATAL: Camera not found. Ensure Arducam OV9281 is connected.\n", stderr)
     exit(1)
 }
 
@@ -62,7 +63,8 @@ server.onClientConnected = {
         "protocol_version": protocolVersion,
         "backend": "mac-swift",
         "backend_version": serverVersion,
-        "camera_model": "openaicam",
+        // "camera_model": "openaicam",
+        "camera_model": "arducam-ov9281",
         "stream_format": "MJPEG",
         "default_width": 1280,
         "default_height": 720,

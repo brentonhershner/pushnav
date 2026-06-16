@@ -155,8 +155,10 @@ class CaptureManager: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
             deviceTypes: deviceTypes, mediaType: .video, position: .unspecified)
 
         // Try by name first, then by modelID
-        return discovery.devices.first(where: { $0.localizedName.contains("openaicam") })
-            ?? discovery.devices.first(where: { $0.modelID.contains("0x9251") })
+        // return discovery.devices.first(where: { $0.localizedName.contains("openaicam") })
+        //     ?? discovery.devices.first(where: { $0.modelID.contains("0x9251") })
+        return discovery.devices.first(where: { $0.localizedName.contains("Arducam OV9281") })
+            ?? discovery.devices.first(where: { $0.modelID.contains("VendorID_3141") })
     }
 
     private func configureFormat(device: AVCaptureDevice) {
