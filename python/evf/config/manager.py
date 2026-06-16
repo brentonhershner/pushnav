@@ -29,7 +29,7 @@ CONFIG_VERSION = 1
 
 DEFAULT_CONFIG = {
     "version": CONFIG_VERSION,
-    "solver": {"min_matches": 8, "max_prob": 0.2},
+    "solver": {"min_matches": 8, "max_prob": 0.2, "stack_count": 1},
     "camera": {"exposure": None, "gain": None},
     "calibration": {"finder_rotation": 0.0, "sync_d_body": None},
     "logging": {"verbose": False},
@@ -133,6 +133,14 @@ class ConfigManager:
     @max_prob.setter
     def max_prob(self, value: float) -> None:
         self.set("solver", "max_prob", value)
+
+    @property
+    def stack_count(self) -> int:
+        return self.get("solver", "stack_count")
+
+    @stack_count.setter
+    def stack_count(self, value: int) -> None:
+        self.set("solver", "stack_count", max(1, int(value)))
 
     @property
     def exposure(self) -> int:

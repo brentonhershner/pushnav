@@ -33,6 +33,7 @@ from evf.config.logging_setup import setup_logging
 from evf.config.manager import ConfigManager
 from evf.engine.audio import AudioAlert
 from evf.engine.frame_buffer import LatestFrame
+from evf.engine.frame_stacker import FrameStacker
 from evf.engine.goto_target import GotoTarget
 from evf.engine.pointing import PointingState
 from evf.engine.sample_injector import SampleInjector
@@ -88,13 +89,21 @@ class Engine:
         config: ConfigManager | None = None,
     ) -> None:
         # Shared data structures
-        self._frame_buffer = LatestFrame()
+        self._frame_buffer = LatestFrame()         # raw camera frames (live view, MJPEG)
+        self._solver_frame_buffer = LatestFrame()  # stacked frames (solver input)
         self._pointing_state = PointingState()
         self._state_machine = StateMachine()
         self._config = config if config is not None else ConfigManager()
         self._goto_target = GotoTarget()
         self._app_version = _read_app_version()
         self._dev_mode = dev_mode
+
+        # Frame stacker (raw → solver_frame_buffer)
+        self._frame_stacker = FrameStacker(
+            source=self._frame_buffer,
+            output=self._solver_frame_buffer,
+            stack_count=self._config.stack_count,
+        )
 
         # Sample injector (continuous JPEG injection for dev/debug)
         self._sample_injector = SampleInjector(self._frame_buffer)
@@ -282,6 +291,11 @@ class Engine:
     def set_max_prob(self, value: float) -> None:
         self._config.max_prob = float(value)
 
+    def set_stack_count(self, value: int) -> None:
+        n = max(1, int(value))
+        self._config.stack_count = n
+        self._frame_stacker.stack_count = n
+
     @property
     def stellarium_status(self) -> dict | None:
         if self._stellarium:
@@ -406,7 +420,7 @@ class Engine:
                 self._state_machine,
                 self._goto_target,
                 self._config,
-                frame_buffer=self._frame_buffer,
+                frame_buffer=self._solver_frame_buffer,
                 stellarium_object=lambda: self.stellarium_object,
                 camera_controls=lambda: self.camera_controls,
                 sync_state=lambda: {
@@ -492,6 +506,10 @@ class Engine:
                         value = saved
                     client.set_control(cid, value)
                     client.update_cached_control(cid, value)
+            self._frame_stacker.start()
+            logger.info(
+                "Frame stacker started (stack_count=%d)", self._config.stack_count
+            )
         except Exception as exc:
             logger.error("Failed to start camera: %s", exc)
             self._subprocess_mgr = None
@@ -524,7 +542,7 @@ class Engine:
             self._audio = AudioAlert(enabled=self._config.audio_enabled)
             self._solver_thread = SolverThread(
                 self._solver,
-                self._frame_buffer,
+                self._solver_frame_buffer,
                 self._pointing_state,
                 self._state_machine,
                 self._config,
@@ -608,7 +626,7 @@ class Engine:
     def _perform_sync_solve(self) -> None:
         """Background thread: solve frame, build candidates, transition to SYNC_CONFIRM."""
         try:
-            frame_data, _, _ = self._frame_buffer.get()
+            frame_data, _, _ = self._solver_frame_buffer.get()
             if frame_data is None:
                 self._sync_error = "No camera frame available"
                 return
@@ -730,6 +748,12 @@ class Engine:
             self._sample_injector.stop()
         except Exception as exc:
             logger.error("Error stopping sample injector: %s", exc)
+
+        # 0b. Stop frame stacker
+        try:
+            self._frame_stacker.stop()
+        except Exception as exc:
+            logger.error("Error stopping frame stacker: %s", exc)
 
         # 1. Stop solver thread
         if self._solver_thread:

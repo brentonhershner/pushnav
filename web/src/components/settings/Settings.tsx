@@ -11,6 +11,7 @@ const DEFAULT_SHOW_STARS = false;
 const DEFAULT_AUDIO_ENABLED = true;
 const DEFAULT_MIN_MATCHES = 8;
 const DEFAULT_MAX_PROB = 0.2;
+const DEFAULT_STACK_COUNT = 1;
 
 interface Props {
   state: EnginePayload;
@@ -29,6 +30,7 @@ export function Settings({ state, showStars, setShowStars, className }: Props) {
       .setAdvanced({
         min_matches: DEFAULT_MIN_MATCHES,
         max_prob: DEFAULT_MAX_PROB,
+        stack_count: DEFAULT_STACK_COUNT,
       })
       .catch(console.error);
   }
@@ -93,6 +95,26 @@ export function Settings({ state, showStars, setShowStars, className }: Props) {
           </Row>
           <p className="text-xs text-muted-foreground leading-snug">
             Max false-match probability. Lower = stricter.
+          </p>
+          <Row label="Frame stack">
+            <Input
+              type="number"
+              min={1}
+              max={32}
+              step={1}
+              defaultValue={state.stack_count}
+              key={`stack-${state.stack_count}`}
+              className="w-20 h-8"
+              onBlur={(e) =>
+                api.setAdvanced({
+                  stack_count: Number(e.currentTarget.value),
+                })
+              }
+            />
+          </Row>
+          <p className="text-xs text-muted-foreground leading-snug">
+            Frames averaged before solving. Higher = brighter stars, more
+            latency. 1 = off, 8 = ~¼s effective exposure at 30fps.
           </p>
         </div>
         <Button

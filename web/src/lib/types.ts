@@ -115,5 +115,6 @@ export interface EnginePayload {
   dev_mode: boolean;
   min_matches: number;
   max_prob: number;
+  stack_count: number;
   sample_active: string | null;
 }

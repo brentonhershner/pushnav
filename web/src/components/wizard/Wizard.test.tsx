@@ -15,7 +15,7 @@ const base: EnginePayload = {
   webserver: { url: null }, audio_enabled: true,
   camera: { connected: false, all_centroids: null, matched_centroids: null },
   location: { latitude: null, longitude: null, source: null },
-  dev_mode: false, min_matches: 8, max_prob: 0.2, sample_active: null,
+  dev_mode: false, min_matches: 8, max_prob: 0.2, stack_count: 1, sample_active: null,
 };
 
 describe("Wizard", () => {

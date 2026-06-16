@@ -72,6 +72,7 @@ class EngineActions(Protocol):
     def capture_frame(self): ...  # returns Path | None
     def set_min_matches(self, value: int) -> None: ...
     def set_max_prob(self, value: float) -> None: ...
+    def set_stack_count(self, value: int) -> None: ...
     def set_location(
         self, latitude: float | None, longitude: float | None,
     ) -> None: ...
@@ -473,6 +474,13 @@ class WebServer:
             )
             if resp.status >= 400:
                 return resp
+        if "stack_count" in body:
+            resp = await self._handle_api(
+                request,
+                lambda: self._actions.set_stack_count(int(body["stack_count"])),
+            )
+            if resp.status >= 400:
+                return resp
         if "location" in body:
             loc = body["location"]
             if loc is None:
@@ -593,6 +601,7 @@ class WebServer:
             "dev_mode": self._dev_mode,
             "min_matches": self._config.min_matches,
             "max_prob": self._config.max_prob,
+            "stack_count": self._config.stack_count,
             "sample_active": (
                 self._sample_active() if self._sample_active else None
             ),

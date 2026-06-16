@@ -30,7 +30,7 @@ export const api = {
     audio_enabled?: boolean;
     location?: { latitude: number; longitude: number } | null;
   }) => post("/api/settings", s),
-  setAdvanced: (s: { min_matches?: number; max_prob?: number }) =>
+  setAdvanced: (s: { min_matches?: number; max_prob?: number; stack_count?: number }) =>
     post("/api/settings", s),
   dev: {
     injectSample: (name: string | null) =>
