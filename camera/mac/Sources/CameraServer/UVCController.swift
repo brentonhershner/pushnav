@@ -64,24 +64,19 @@ private let UVC_GET_RES: UInt8 = 0x84
 private let UVC_GET_INFO: UInt8 = 0x86
 private let UVC_GET_DEF: UInt8 = 0x87
 
-// Camera Terminal selectors
+// Camera Terminal AE mode selector — special-cased (not a regular ranged
+// control), so it stays here rather than in CAMERA_CONTROLS.
 private let CT_AE_MODE: UInt8 = 0x02
-private let CT_EXPOSURE_TIME_ABS: UInt8 = 0x04
 
-// Processing Unit selectors
-private let PU_GAIN: UInt8 = 0x04
+// All other control selectors (exposure, gain, brightness, contrast, gamma,
+// sharpness, backlight compensation) are declared in CameraConfig.swift's
+// CAMERA_CONTROLS list — the single source of truth for camera tuning.
 
 // Auto-Exposure Mode bitmap values
 private let AE_MODE_MANUAL: UInt8 = 0x01
 private let AE_MODE_AUTO: UInt8 = 0x02
 
-// // openaicam VID/PID
-// let OPENAICAM_VID: Int = 0x32E6
-// let OPENAICAM_PID: Int = 0x9251
-
-// Arducam OV9281 VID/PID
-let OPENAICAM_VID: Int = 0x0c45
-let OPENAICAM_PID: Int = 0x6366
+// VID/PID — defined in CameraConfig.swift as CAMERA_VID / CAMERA_PID
 
 // MARK: - USB Request Type Builder
 
@@ -117,8 +112,24 @@ class UVCController {
         var capable: Bool = false
     }
 
-    var exposureTimeRange = ControlRange()
-    var gainRange = ControlRange()
+    // Probed ranges for every control in CAMERA_CONTROLS (CameraConfig.swift),
+    // keyed by control id. Exposure keeps a dedicated accessor below since the
+    // solver/engine call it directly outside the generic SET_CONTROL path.
+    var ranges: [String: ControlRange] = [:]
+
+    var exposureTimeRange: ControlRange { ranges["exposure"] ?? ControlRange() }
+    var gainRange: ControlRange { ranges["gain"] ?? ControlRange() }
+
+    private func unitID(for unit: UVCUnit) -> UInt8 {
+        switch unit {
+        case .cameraTerminal: return cameraTerminalID
+        case .processingUnit: return processingUnitID
+        }
+    }
+
+    private func def(for id: String) -> UVCControlDef? {
+        CAMERA_CONTROLS.first { $0.id == id }
+    }
 
     init?(vendorID: Int, productID: Int) {
         // Find the USB device by VID/PID
@@ -128,7 +139,7 @@ class UVCController {
 
         let device = IOServiceGetMatchingService(kIOMainPortDefault, matchingDict)
         guard device != IO_OBJECT_NULL else {
-            fputs("ERROR: openaicam not found (VID=0x\(String(vendorID, radix: 16)), PID=0x\(String(productID, radix: 16)))\n", stderr)
+            fputs("ERROR: \(CAMERA_LABEL) not found via IOKit (VID=0x\(String(vendorID, radix: 16)), PID=0x\(String(productID, radix: 16)))\n", stderr)
             return nil
         }
         defer { IOObjectRelease(device) }
@@ -285,17 +296,20 @@ class UVCController {
         return range
     }
 
+    /// Probe every control declared in CAMERA_CONTROLS (CameraConfig.swift).
+    /// Adding a control there is sufficient to have it probed, exposed in
+    /// CONTROL_INFO, and settable — no other code changes needed.
     func probeControls() {
         print("Probing UVC controls...")
 
-        exposureTimeRange = probeRange(selector: CT_EXPOSURE_TIME_ABS, unitID: cameraTerminalID, size: 4)
-        if exposureTimeRange.capable {
-            print("  Exposure Time: \(exposureTimeRange.min)...\(exposureTimeRange.max) (cur=\(exposureTimeRange.cur), def=\(exposureTimeRange.def), res=\(exposureTimeRange.res))")
-        }
-
-        gainRange = probeRange(selector: PU_GAIN, unitID: processingUnitID, size: 2)
-        if gainRange.capable {
-            print("  Gain: \(gainRange.min)...\(gainRange.max) (cur=\(gainRange.cur), def=\(gainRange.def), res=\(gainRange.res))")
+        for ctrl in CAMERA_CONTROLS {
+            let range = probeRange(selector: ctrl.selector, unitID: unitID(for: ctrl.unit), size: ctrl.size)
+            ranges[ctrl.id] = range
+            if range.capable {
+                print("  \(ctrl.label): \(range.min)...\(range.max) (cur=\(range.cur), def=\(range.def), res=\(range.res))")
+            } else {
+                print("  \(ctrl.label): not supported by this camera")
+            }
         }
 
         print("Control probing complete.")
@@ -314,23 +328,48 @@ class UVCController {
         }
     }
 
+    /// Force every control in CAMERA_CONTROLS_FORCED_OFF to its minimum value.
+    /// Backlight compensation in particular fights manual exposure control by
+    /// re-brightening scenes it judges too dark — exactly wrong for capturing
+    /// faint stars against sky background.
+    func forceFixedControlsOff() {
+        for id in CAMERA_CONTROLS_FORCED_OFF {
+            guard let ctrl = def(for: id), let range = ranges[id], range.capable else { continue }
+            _ = setValue(selector: ctrl.selector, unitID: unitID(for: ctrl.unit), size: ctrl.size, value: range.min)
+            let confirmed = getValue(request: UVC_GET_CUR, selector: ctrl.selector,
+                                      unitID: unitID(for: ctrl.unit), size: ctrl.size)
+            print("\(ctrl.label) forced to \(range.min): \(confirmed == range.min ? "confirmed" : "FAILED (got \(String(describing: confirmed)))")")
+        }
+    }
+
+    /// Generic getter/setter for any control declared in CAMERA_CONTROLS.
+    func getControl(id: String) -> Int? {
+        guard let ctrl = def(for: id) else { return nil }
+        return getValue(request: UVC_GET_CUR, selector: ctrl.selector,
+                        unitID: unitID(for: ctrl.unit), size: ctrl.size) ?? ranges[id]?.cur
+    }
+
+    func setControl(id: String, value: Int) -> Bool {
+        guard let ctrl = def(for: id), let range = ranges[id], range.capable else { return false }
+        let clamped = Swift.max(range.min, Swift.min(value, range.max))
+        return setValue(selector: ctrl.selector, unitID: unitID(for: ctrl.unit), size: ctrl.size, value: clamped)
+    }
+
+    // Dedicated exposure accessors — called directly by main.swift/engine code
+    // outside the generic SET_CONTROL path.
     func setExposureTime(_ value: Int) {
-        let clamped = Swift.max(exposureTimeRange.min, Swift.min(value, exposureTimeRange.max))
-        _ = setValue(selector: CT_EXPOSURE_TIME_ABS, unitID: cameraTerminalID, size: 4, value: clamped)
+        _ = setControl(id: "exposure", value: value)
     }
 
     func getExposureTime() -> Int {
-        return getValue(request: UVC_GET_CUR, selector: CT_EXPOSURE_TIME_ABS,
-                        unitID: cameraTerminalID, size: 4) ?? exposureTimeRange.cur
+        return getControl(id: "exposure") ?? exposureTimeRange.cur
     }
 
     func setGain(_ value: Int) {
-        let clamped = Swift.max(gainRange.min, Swift.min(value, gainRange.max))
-        _ = setValue(selector: PU_GAIN, unitID: processingUnitID, size: 2, value: clamped)
+        _ = setControl(id: "gain", value: value)
     }
 
     func getGain() -> Int {
-        return getValue(request: UVC_GET_CUR, selector: PU_GAIN,
-                        unitID: processingUnitID, size: 2) ?? gainRange.cur
+        return getControl(id: "gain") ?? gainRange.cur
     }
 }

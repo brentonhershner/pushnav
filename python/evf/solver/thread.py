@@ -282,7 +282,14 @@ class SolverThread:
                     result["Prob"],
                 )
             else:
-                self._pointing.clear_centroids()
+                # Extraction still ran even though the pattern match failed
+                # (or wasn't attempted) — keep the "stars seen" overlay live
+                # rather than blanking it out every time a solve is rejected.
+                self._pointing.update_star_overlay(
+                    all_centroids=result.get("all_centroids"),
+                    matched_centroids=None,
+                    image_size=result.get("image_size"),
+                )
                 with self._lock:
                     self._consecutive_failures += 1
                     new_count = self._consecutive_failures

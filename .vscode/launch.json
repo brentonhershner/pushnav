@@ -1,0 +1,33 @@
+{
+  "configurations": [
+    {
+      "name": "Run myFile",
+      "program": "${file}",
+      "request": "launch",
+      "skipFiles": [
+        "<node_internals>/**"
+      ],
+      "type": "node"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:pushnav}/camera/mac",
+      "name": "Debug camera_server (camera/mac)",
+      "target": "camera_server",
+      "configuration": "debug",
+      "preLaunchTask": "swift: Build Debug camera_server (camera/mac)"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:pushnav}/camera/mac",
+      "name": "Release camera_server (camera/mac)",
+      "target": "camera_server",
+      "configuration": "release",
+      "preLaunchTask": "swift: Build Release camera_server (camera/mac)"
+    }
+  ]
+} 

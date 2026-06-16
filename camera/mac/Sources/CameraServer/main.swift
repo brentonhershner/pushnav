@@ -30,15 +30,15 @@ print("EVF Camera Server v\(serverVersion)")
 
 // MARK: - 1. Initialize UVC Controller
 
-guard let uvc = UVCController(vendorID: OPENAICAM_VID, productID: OPENAICAM_PID) else {
-    // fputs("FATAL: Camera not found. Ensure openaicam is connected.\n", stderr)
-    fputs("FATAL: Camera not found. Ensure Arducam OV9281 is connected.\n", stderr)
+guard let uvc = UVCController(vendorID: CAMERA_VID, productID: CAMERA_PID) else {
+    fputs("FATAL: Camera not found. Ensure \(CAMERA_LABEL) is connected.\n", stderr)
     exit(1)
 }
 
 // MARK: - 2. Force auto-exposure OFF (spec §6.1)
 
 uvc.forceAutoExposureOff()
+uvc.forceFixedControlsOff()
 
 // MARK: - 3. Start capture
 
@@ -63,8 +63,7 @@ server.onClientConnected = {
         "protocol_version": protocolVersion,
         "backend": "mac-swift",
         "backend_version": serverVersion,
-        // "camera_model": "openaicam",
-        "camera_model": "arducam-ov9281",
+        "camera_model": CAMERA_MODEL,
         "stream_format": "MJPEG",
         "default_width": 1280,
         "default_height": 720,

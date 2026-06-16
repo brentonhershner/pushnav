@@ -30,34 +30,27 @@ class ControlManager {
     }
 
     /// Build the CONTROL_INFO JSON dictionary from current UVC state.
+    ///
+    /// Iterates CAMERA_CONTROLS (CameraConfig.swift) generically — any control
+    /// the camera reports as capable becomes a slider in the UI automatically.
+    /// Controls forced off via CAMERA_CONTROLS_FORCED_OFF are excluded since
+    /// they aren't meant to be user-adjustable.
     func buildControlInfo() -> [String: Any] {
         var controls: [[String: Any]] = []
 
-        if uvc.exposureTimeRange.capable {
-            let curExposure = uvc.getExposureTime()
+        for ctrl in CAMERA_CONTROLS {
+            guard !CAMERA_CONTROLS_FORCED_OFF.contains(ctrl.id) else { continue }
+            guard let range = uvc.ranges[ctrl.id], range.capable else { continue }
+            let cur = uvc.getControl(id: ctrl.id) ?? range.cur
             controls.append([
-                "id": "exposure",
-                "label": "Exposure",
+                "id": ctrl.id,
+                "label": ctrl.label,
                 "type": "int",
-                "min": uvc.exposureTimeRange.min,
-                "max": uvc.exposureTimeRange.max,
-                "step": uvc.exposureTimeRange.res,
-                "cur": curExposure,
-                "unit": "100us",
-            ])
-        }
-
-        if uvc.gainRange.capable {
-            let curGain = uvc.getGain()
-            controls.append([
-                "id": "gain",
-                "label": "Gain",
-                "type": "int",
-                "min": uvc.gainRange.min,
-                "max": uvc.gainRange.max,
-                "step": uvc.gainRange.res,
-                "cur": curGain,
-                "unit": "raw",
+                "min": range.min,
+                "max": range.max,
+                "step": range.res,
+                "cur": cur,
+                "unit": ctrl.unitLabel,
             ])
         }
 
@@ -66,18 +59,12 @@ class ControlManager {
 
     /// Apply a SET_CONTROL command. Returns true if the control was recognized and applied.
     func applySetControl(id: String, value: Int) -> Bool {
-        switch id {
-        case "exposure":
-            uvc.setExposureTime(value)
-            print("SET_CONTROL: exposure = \(value) → actual = \(uvc.getExposureTime())")
-            return true
-        case "gain":
-            uvc.setGain(value)
-            print("SET_CONTROL: gain = \(value) → actual = \(uvc.getGain())")
-            return true
-        default:
+        guard CAMERA_CONTROLS.contains(where: { $0.id == id }) else {
             fputs("WARNING: Unknown control ID: \(id)\n", stderr)
             return false
         }
+        let applied = uvc.setControl(id: id, value: value)
+        print("SET_CONTROL: \(id) = \(value) → actual = \(uvc.getControl(id: id) ?? -1)")
+        return applied
     }
 }

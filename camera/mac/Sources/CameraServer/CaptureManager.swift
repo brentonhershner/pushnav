@@ -17,9 +17,9 @@
 
 // CaptureManager.swift — AVFoundation capture session with MJPEG JPEG extraction.
 //
-// Discovers the openaicam by name or modelID, configures for MJPEG at 1280x720/30fps,
-// and extracts JPEG frames from CMBlockBuffer (zero-copy when MJPEG) or falls back
-// to CIContext JPEG encoding.
+// Discovers the camera using CameraConfig matching rules, configures for MJPEG
+// at 1280x720 at the lowest supported frame rate, and extracts JPEG frames from
+// CMBlockBuffer (zero-copy when MJPEG) or falls back to CIContext JPEG encoding.
 
 import AVFoundation
 import CoreImage
@@ -46,7 +46,7 @@ class CaptureManager: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     /// Start the capture session. Returns true on success.
     func start() -> Bool {
         guard let camera = findCamera() else {
-            fputs("ERROR: openaicam not found in AVFoundation\n", stderr)
+            fputs("ERROR: \(CAMERA_LABEL) not found in AVFoundation\n", stderr)
             return false
         }
         print("Found camera: \(camera.localizedName) [\(camera.modelID)]")
@@ -154,11 +154,47 @@ class CaptureManager: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
         let discovery = AVCaptureDevice.DiscoverySession(
             deviceTypes: deviceTypes, mediaType: .video, position: .unspecified)
 
-        // Try by name first, then by modelID
-        // return discovery.devices.first(where: { $0.localizedName.contains("openaicam") })
-        //     ?? discovery.devices.first(where: { $0.modelID.contains("0x9251") })
-        return discovery.devices.first(where: { $0.localizedName.contains("Arducam OV9281") })
-            ?? discovery.devices.first(where: { $0.modelID.contains("VendorID_3141") })
+        let all = discovery.devices
+        print("AVFoundation video devices (\(all.count)):")
+        for d in all {
+            print("  name='\(d.localizedName)'  modelID='\(d.modelID)'")
+        }
+
+        // 1. Match by localizedName substring (most specific)
+        for substring in CAMERA_NAME_SUBSTRINGS {
+            if let match = all.first(where: { $0.localizedName.contains(substring) }) {
+                print("Matched camera by name '\(substring)': \(match.localizedName)")
+                return match
+            }
+        }
+
+        // 2. Match by modelID substring
+        for substring in CAMERA_MODEL_ID_SUBSTRINGS {
+            if let match = all.first(where: { $0.modelID.contains(substring) }) {
+                print("Matched camera by modelID '\(substring)': \(match.localizedName)")
+                return match
+            }
+        }
+
+        // 3. Single external USB camera fallback
+        let externals: [AVCaptureDevice]
+        if #available(macOS 14.0, *) {
+            externals = all.filter { $0.deviceType == .external }
+        } else {
+            externals = all.filter {
+                !$0.localizedName.contains("FaceTime") &&
+                !$0.localizedName.contains("iPhone") &&
+                !$0.localizedName.contains("iPad") &&
+                $0.position == .unspecified
+            }
+        }
+        if externals.count == 1 {
+            print("Single external camera fallback: \(externals[0].localizedName)")
+            return externals[0]
+        }
+
+        print("ERROR: No matching camera found. Available: \(all.map { $0.localizedName })")
+        return nil
     }
 
     private func configureFormat(device: AVCaptureDevice) {

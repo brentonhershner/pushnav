@@ -1,8 +1,14 @@
-import { useState, useEffect } from "react";
-import { Slider } from "@/components/ui/slider";
+import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { api } from "@/lib/api";
 import type { ControlDescriptor } from "@/lib/types";
+
+// Sharpness ranges into the thousands on this camera, so the native
+// spinner's default step of 1 would take forever to click through —
+// step it by 100 instead. Every other control keeps its protocol-reported
+// step (usually 1).
+const LARGE_STEP_CONTROL_IDS = new Set(["sharpness"]);
+const LARGE_STEP = 100;
 
 interface Props {
   controls: ControlDescriptor[];
@@ -14,7 +20,7 @@ export function CameraControls({ controls }: Props) {
       <CardHeader>
         <CardTitle>Camera</CardTitle>
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="space-y-2">
         {controls.map((c) => (
           <ControlRow key={c.id ?? c.name} control={c} />
         ))}
@@ -26,29 +32,23 @@ export function CameraControls({ controls }: Props) {
 function ControlRow({ control }: { control: ControlDescriptor }) {
   const id = control.id ?? control.name ?? "";
   const serverValue = control.cur ?? control.value ?? control.min;
-  const [local, setLocal] = useState(serverValue);
-
-  // Reflect server-side updates
-  useEffect(() => { setLocal(serverValue); }, [serverValue]);
-
-  const commit = (v: number) => {
-    setLocal(v);
-    api.setControl(id, v).catch((e) => console.error(e));
-  };
+  const stepSize = LARGE_STEP_CONTROL_IDS.has(id) ? LARGE_STEP : control.step ?? 1;
 
   return (
-    <div>
-      <div className="flex justify-between text-sm mb-1">
-        <span>{control.label}</span>
-        <span className="text-muted-foreground">{local}</span>
-      </div>
-      <Slider
+    <div className="flex items-center justify-between">
+      <span className="text-sm">{control.label}</span>
+      <Input
+        type="number"
         min={control.min}
         max={control.max}
-        step={control.step ?? 1}
-        value={[local]}
-        onValueChange={([v]) => setLocal(v)}
-        onValueCommit={([v]) => commit(v)}
+        step={stepSize}
+        defaultValue={serverValue}
+        key={`${id}-${serverValue}`}
+        className="w-24 h-8"
+        onBlur={(e) => {
+          const v = Number(e.currentTarget.value);
+          if (!Number.isNaN(v)) api.setControl(id, v).catch((e) => console.error(e));
+        }}
       />
     </div>
   );

@@ -45,11 +45,11 @@ export default function App() {
                 : "min-h-screen flex flex-col"
             }
           >
-            <div className="max-w-5xl mx-auto px-2 pt-2 w-full shrink-0">
+            <div className="px-2 pt-2 w-full shrink-0">
               <StateHeader state={state} view={view} onViewChange={setView} />
             </div>
             {view === "navigation" ? (
-              <div className="grid md:grid-cols-3 gap-2 max-w-5xl mx-auto px-2 pt-3 pb-2 items-stretch w-full flex-1">
+              <div className="grid md:grid-cols-3 gap-2 px-2 pt-3 pb-2 items-stretch w-full flex-1">
                 <div className="md:col-span-2 flex flex-col gap-2">
                   <LiveView state={state} showStars={showStars} />
                   <StepIndicator state={state} />
@@ -76,7 +76,7 @@ export default function App() {
                 </div>
               </div>
             ) : (
-              <div className="max-w-5xl mx-auto px-2 pt-3 pb-2 w-full flex-1 min-h-0">
+              <div className="px-2 pt-3 pb-2 w-full flex-1 min-h-0">
                 <WhatToSee
                   state={state}
                   onSwitchToNavigation={() => setView("navigation")}
@@ -85,7 +85,7 @@ export default function App() {
             )}
           </section>
           {state.dev_mode && (
-            <section className="max-w-5xl mx-auto px-2 pb-2 w-full">
+            <section className="px-2 pb-2 w-full">
               <DebugPanel state={state} />
             </section>
           )}

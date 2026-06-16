@@ -79,6 +79,25 @@ class PointingState:
             self._matched_centroids = matched_centroids
             self._image_size = image_size
 
+    def update_star_overlay(
+        self,
+        *,
+        all_centroids: list | None,
+        matched_centroids: list | None,
+        image_size: tuple[int, int] | None,
+    ) -> None:
+        """Update star-overlay data independent of solve/pointing validity.
+
+        Centroid extraction runs every frame regardless of whether the
+        subsequent pattern match succeeds, so the overlay (which star is
+        bright enough to be a solve candidate vs. actually matched to the
+        catalog) should update every frame too — not just on a full solve.
+        """
+        with self._lock:
+            self._all_centroids = all_centroids
+            self._matched_centroids = matched_centroids
+            self._image_size = image_size
+
     def read(self) -> PointingSnapshot:
         """Return an immutable snapshot. Called by UI and Stellarium threads."""
         with self._lock:

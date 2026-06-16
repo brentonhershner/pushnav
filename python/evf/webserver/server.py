@@ -558,8 +558,8 @@ class WebServer:
         activity_blk = self._activity() if self._activity else {}
         camera_blk = {
             "connected": True if (self._frame_buffer and self._frame_buffer.get()[0]) else False,
-            "all_centroids": snap.all_centroids if snap.valid else None,
-            "matched_centroids": snap.matched_centroids if snap.valid else None,
+            "all_centroids": snap.all_centroids,
+            "matched_centroids": snap.matched_centroids,
         }
 
         stellarium_blk = dict(
