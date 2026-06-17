@@ -85,7 +85,7 @@ export function Settings({ state, showStars, setShowStars, className }: Props) {
   const url = state.webserver.url;
 
   return (
-    <Card className={cn(className)}>
+    <Card className={cn("flex flex-col", className)}>
       <CardHeader className="pb-2">
         <CardTitle className="text-primary">Settings</CardTitle>
       </CardHeader>
@@ -113,7 +113,7 @@ export function Settings({ state, showStars, setShowStars, className }: Props) {
         )}
 
         {/* Accordion sections for everything else */}
-        <Accordion type="multiple" className="w-full space-y-0">
+        <Accordion type="multiple" defaultValue={["connectivity"]} className="w-full space-y-0">
 
           <AccordionItem value="display" className="border-b-0">
             <AccordionTrigger className="py-2 text-sm font-medium text-primary hover:no-underline">

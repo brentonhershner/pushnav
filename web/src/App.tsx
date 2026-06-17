@@ -48,11 +48,12 @@ export default function App() {
                   <Wizard state={state} />
                 </div>
               </div>
-              <div className="overflow-y-auto">
+              <div className="flex flex-col min-h-0 overflow-y-auto">
                 <Settings
                   state={state}
                   showStars={showStars}
                   setShowStars={setShowStars}
+                  className="flex-1"
                 />
               </div>
             </div>
