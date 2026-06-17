@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -59,10 +59,26 @@ export function CameraControls({ controls }: Props) {
   );
 }
 
+const DEBOUNCE_MS = 600;
+
 function ControlRow({ control }: { control: ControlDescriptor }) {
   const id = control.id ?? control.name ?? "";
-  const serverValue = control.cur ?? control.value ?? control.min;
+  const serverValue = control.cur ?? control.value ?? control.min ?? 0;
   const stepSize = LARGE_STEP_CONTROL_IDS.has(id) ? LARGE_STEP : control.step ?? 1;
+
+  // Controlled so auto-exposure (or other server-side changes) reflect live.
+  const [localValue, setLocalValue] = useState<number>(serverValue);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const editingRef = useRef(false); // true while the input is focused
+
+  // Sync server-pushed value changes (e.g. auto-exposure) when user isn't editing.
+  useEffect(() => {
+    if (!editingRef.current) setLocalValue(serverValue);
+  }, [serverValue]);
+
+  function commit(v: number) {
+    if (!Number.isNaN(v)) api.setControl(id, v).catch(console.error);
+  }
 
   return (
     <div className="flex items-center justify-between">
@@ -72,12 +88,29 @@ function ControlRow({ control }: { control: ControlDescriptor }) {
         min={control.min}
         max={control.max}
         step={stepSize}
-        defaultValue={serverValue}
-        key={`${id}-${serverValue}`}
+        value={localValue}
         className="w-24 h-8"
+        onFocus={() => { editingRef.current = true; }}
         onBlur={(e) => {
+          editingRef.current = false;
+          // Always commit on blur — flushes any pending debounce.
+          if (debounceRef.current) { clearTimeout(debounceRef.current); debounceRef.current = null; }
+          commit(Number(e.currentTarget.value));
+        }}
+        onChange={(e) => {
           const v = Number(e.currentTarget.value);
-          if (!Number.isNaN(v)) api.setControl(id, v).catch((e) => console.error(e));
+          setLocalValue(v);
+          // inputType distinguishes manual text entry from spinner / arrow-key steps.
+          // Typing or backspace → debounce. Spinner click or ↑/↓ → immediate.
+          const inputType = (e.nativeEvent as InputEvent).inputType;
+          const isManualEdit = inputType?.startsWith("insert") || inputType?.startsWith("delete");
+          if (isManualEdit) {
+            if (debounceRef.current) clearTimeout(debounceRef.current);
+            debounceRef.current = setTimeout(() => { debounceRef.current = null; commit(v); }, DEBOUNCE_MS);
+          } else {
+            if (debounceRef.current) { clearTimeout(debounceRef.current); debounceRef.current = null; }
+            commit(v);
+          }
         }}
       />
     </div>
