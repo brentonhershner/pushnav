@@ -1,12 +1,7 @@
 import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/components/ui/accordion";
 import { Switch } from "@/components/ui/switch";
+import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { QRCodeSVG } from "qrcode.react";
@@ -22,12 +17,6 @@ const DEFAULT_MIN_MATCHES = 8;
 const DEFAULT_MAX_PROB = 0.2;
 const DEFAULT_STACK_COUNT = 1;
 
-// Controls shown in the main camera section (user touches these every session).
-const PRIMARY_CONTROL_IDS = new Set(["exposure", "gain"]);
-// Controls hidden in the "Advanced camera" accordion section.
-const ADVANCED_CONTROL_IDS = new Set([
-  "brightness", "contrast", "gamma", "sharpness", "backlight_compensation",
-]);
 const LARGE_STEP_CONTROL_IDS = new Set(["sharpness"]);
 const LARGE_STEP = 100;
 
@@ -76,25 +65,32 @@ export function Settings({ state, showStars, setShowStars, className }: Props) {
     }).catch(console.error);
   }
 
-  const primaryControls = state.controls.filter((c) =>
-    PRIMARY_CONTROL_IDS.has(c.id ?? c.name ?? "")
-  );
-  const advancedControls = state.controls.filter((c) =>
-    ADVANCED_CONTROL_IDS.has(c.id ?? c.name ?? "")
-  );
   const url = state.webserver.url;
 
   return (
     <Card className={cn("flex flex-col", className)}>
-      <CardHeader className="pb-2">
+      <CardHeader className="pb-2 shrink-0">
         <CardTitle className="text-primary">Settings</CardTitle>
       </CardHeader>
-      <CardContent className="space-y-3 pb-4">
+      <CardContent className="flex-1 overflow-y-auto space-y-3 pb-4">
 
-        {/* Always-visible: primary camera controls + auto-tune */}
-        {primaryControls.length > 0 && (
-          <div className="space-y-2">
-            {primaryControls.map((c) => (
+        {/* Display */}
+        <Row label="Show detected stars">
+          <Switch checked={showStars} onCheckedChange={setShowStars} />
+        </Row>
+        <Row label="Audio feedback">
+          <Switch
+            checked={state.audio_enabled}
+            onCheckedChange={(v) => api.setSettings({ audio_enabled: v })}
+          />
+        </Row>
+
+        {/* Camera controls */}
+        {state.controls.length > 0 && (
+          <>
+            <Separator />
+            <SectionLabel>Camera</SectionLabel>
+            {state.controls.map((c) => (
               <CameraControlRow key={c.id ?? c.name} control={c} />
             ))}
             <Button
@@ -109,108 +105,66 @@ export function Settings({ state, showStars, setShowStars, className }: Props) {
             {autotuneStatus && (
               <p className="text-xs text-muted-foreground text-center">{autotuneStatus}</p>
             )}
-          </div>
+          </>
         )}
 
-        {/* Accordion sections for everything else */}
-        <Accordion type="multiple" defaultValue={["connectivity"]} className="w-full space-y-0">
-
-          <AccordionItem value="display" className="border-b-0">
-            <AccordionTrigger className="py-2 text-sm font-medium text-primary hover:no-underline">
-              Display
-            </AccordionTrigger>
-            <AccordionContent className="space-y-2 pb-2">
-              <Row label="Show detected stars">
-                <Switch checked={showStars} onCheckedChange={setShowStars} />
-              </Row>
-              <Row label="Audio feedback">
-                <Switch
-                  checked={state.audio_enabled}
-                  onCheckedChange={(v) => api.setSettings({ audio_enabled: v })}
-                />
-              </Row>
-            </AccordionContent>
-          </AccordionItem>
-
-          <AccordionItem value="solver" className="border-b-0">
-            <AccordionTrigger className="py-2 text-sm font-medium text-primary hover:no-underline">
-              Solver
-            </AccordionTrigger>
-            <AccordionContent className="space-y-2 pb-2">
-              <Row label="Min matches">
-                <Input type="number" min={3} max={50} step={1} className="w-20 h-8" {...minMatchesProps} />
-              </Row>
-              <p className="text-xs text-muted-foreground leading-snug">
-                Stars matched before a solve is accepted. Higher = stricter.
-              </p>
-              <Row label="Max prob">
-                <Input type="number" min={0} max={1} step={0.01} className="w-20 h-8" {...maxProbProps} />
-              </Row>
-              <p className="text-xs text-muted-foreground leading-snug">
-                Max false-match probability. Lower = stricter.
-              </p>
-              <Row label="Frame stack">
-                <Input type="number" min={1} max={32} step={1} className="w-20 h-8" {...stackCountProps} />
-              </Row>
-              <p className="text-xs text-muted-foreground leading-snug">
-                Frames averaged before solving. 1 = off, 8 = ~¼s at 30fps.
-              </p>
-              <Button variant="outline" size="sm" className="w-full mt-1" onClick={resetToDefaults}>
-                Reset to defaults
-              </Button>
-            </AccordionContent>
-          </AccordionItem>
-
-          <AccordionItem value="connectivity" className="border-b-0">
-            <AccordionTrigger className="py-2 text-sm font-medium text-primary hover:no-underline">
-              Connectivity
-            </AccordionTrigger>
-            <AccordionContent className="space-y-2 pb-2">
-              <div className="space-y-1">
-                <div className="text-sm font-medium">Mobile phone URL</div>
-                {url ? (
-                  <>
-                    <code className="block text-xs break-all">{url}</code>
-                    <button
-                      type="button"
-                      onClick={() => setShowQR((v) => !v)}
-                      className="text-xs text-primary underline-offset-2 hover:underline"
-                    >
-                      {showQR ? "Hide QR code" : "Show QR code"}
-                    </button>
-                    {showQR && (
-                      <div className="pt-1">
-                        <QRCodeSVG value={url} size={128} bgColor="#0a0000" fgColor="#ff4646" />
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <div className="text-xs text-muted-foreground">No LAN IP detected</div>
-                )}
-              </div>
-              <Row label={<span>Stellarium <ActivityDot active={state.stellarium.active} /></span>}>
-                <code className="text-xs">{state.stellarium.address ?? "off"}</code>
-              </Row>
-              <Row label={<span>LX200 (SkySafari) <ActivityDot active={state.lx200.active} /></span>}>
-                <code className="text-xs">{state.lx200.address ?? "off"}</code>
-              </Row>
-            </AccordionContent>
-          </AccordionItem>
-
-          {advancedControls.length > 0 && (
-            <AccordionItem value="advanced-camera" className="border-b-0">
-              <AccordionTrigger className="py-2 text-sm font-medium text-primary hover:no-underline">
-                Advanced camera
-              </AccordionTrigger>
-              <AccordionContent className="space-y-2 pb-2">
-                {advancedControls.map((c) => (
-                  <CameraControlRow key={c.id ?? c.name} control={c} />
-                ))}
-              </AccordionContent>
-            </AccordionItem>
+        {/* Connectivity */}
+        <Separator />
+        <SectionLabel>Connectivity</SectionLabel>
+        <div className="space-y-1">
+          <div className="text-sm font-medium">Mobile phone URL</div>
+          {url ? (
+            <>
+              <code className="block text-xs break-all">{url}</code>
+              <button
+                type="button"
+                onClick={() => setShowQR((v) => !v)}
+                className="text-xs text-primary underline-offset-2 hover:underline"
+              >
+                {showQR ? "Hide QR code" : "Show QR code"}
+              </button>
+              {showQR && (
+                <div className="pt-1">
+                  <QRCodeSVG value={url} size={128} bgColor="#0a0000" fgColor="#ff4646" />
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="text-xs text-muted-foreground">No LAN IP detected</div>
           )}
+        </div>
+        <Row label={<span>Stellarium <ActivityDot active={state.stellarium.active} /></span>}>
+          <code className="text-xs">{state.stellarium.address ?? "off"}</code>
+        </Row>
+        <Row label={<span>LX200 (SkySafari) <ActivityDot active={state.lx200.active} /></span>}>
+          <code className="text-xs">{state.lx200.address ?? "off"}</code>
+        </Row>
 
-        </Accordion>
+        {/* Advanced solver */}
+        <Separator />
+        <SectionLabel>Advanced solver</SectionLabel>
+        <Row label="Min matches">
+          <Input type="number" min={3} max={50} step={1} className="w-20 h-8" {...minMatchesProps} />
+        </Row>
+        <p className="text-xs text-muted-foreground leading-snug">
+          Stars matched before a solve is accepted. Higher = stricter.
+        </p>
+        <Row label="Max prob">
+          <Input type="number" min={0} max={1} step={0.01} className="w-20 h-8" {...maxProbProps} />
+        </Row>
+        <p className="text-xs text-muted-foreground leading-snug">
+          Max false-match probability. Lower = stricter.
+        </p>
+        <Row label="Frame stack">
+          <Input type="number" min={1} max={32} step={1} className="w-20 h-8" {...stackCountProps} />
+        </Row>
+        <p className="text-xs text-muted-foreground leading-snug">
+          Frames averaged before solving. 1 = off, 8 = ~¼s at 30fps.
+        </p>
+
+        <Button variant="outline" size="sm" className="w-full" onClick={resetToDefaults}>
+          Reset to defaults
+        </Button>
 
       </CardContent>
     </Card>
@@ -235,6 +189,10 @@ function CameraControlRow({ control }: { control: ControlDescriptor }) {
       />
     </Row>
   );
+}
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return <div className="text-sm font-medium text-primary">{children}</div>;
 }
 
 function Row({ label, children }: { label: React.ReactNode; children: React.ReactNode }) {
