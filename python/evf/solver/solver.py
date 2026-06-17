@@ -77,21 +77,36 @@ class PlateSolver:
         elapsed = time.monotonic() - t0
         logger.info("tetra3 database loaded in %.2fs: %s", elapsed, db_path)
 
+    # Downsample factor for centroid extraction: 2 = ½ linear = ¼ pixel count = ~4× faster.
+    # Centroids are scaled back to original-resolution space so the overlay and
+    # tetra3 pattern matching both see consistent pixel scales.
+    _SOLVE_DOWNSAMPLE = 2
+
     def solve_frame(self, image_bytes: bytes) -> dict:
         """Solve a single image frame. Returns tetra3 result dict.
 
         Splits into centroid extraction + solve so we can return both
         all detected centroids and matched centroids for star overlay.
+        Centroid extraction runs on a ½-resolution copy for speed; coordinates
+        are scaled back up so everything is in the original-resolution space.
         """
         img = Image.open(io.BytesIO(image_bytes)).convert("L")
+        orig_h, orig_w = img.height, img.width
+
+        # Half-resolution copy for fast centroid extraction
+        ds = self._SOLVE_DOWNSAMPLE
+        small = img.resize((orig_w // ds, orig_h // ds), Image.BILINEAR)
 
         t0 = time.monotonic()
-        centroids = get_centroids_from_image(img, **_CENTROID_PARAMS)
+        centroids_small = get_centroids_from_image(small, **_CENTROID_PARAMS)
         t_extract = (time.monotonic() - t0) * 1000
+
+        # Scale back to original resolution so overlay SVG viewBox aligns
+        centroids = centroids_small * ds if len(centroids_small) else centroids_small
 
         result = self._t3.solve_from_centroids(
             centroids,
-            (img.height, img.width),
+            (orig_h, orig_w),
             return_matches=True,
             **_SOLVE_PARAMS,
         )
@@ -102,8 +117,8 @@ class PlateSolver:
             result["Roll"] = (360.0 - result["Roll"]) % 360.0
 
         result["T_extract"] = t_extract
-        result["all_centroids"] = centroids.tolist()  # Nx2 (y, x)
-        result["image_size"] = (img.height, img.width)
+        result["all_centroids"] = centroids.tolist()  # Nx2 (y, x) in original space
+        result["image_size"] = (orig_h, orig_w)
         return result
 
     @staticmethod
