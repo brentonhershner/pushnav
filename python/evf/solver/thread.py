@@ -132,6 +132,17 @@ class SolverThread:
     _CALIBRATE_STABLE_TOL = 0.05  # max frame-to-frame drift (degrees) to count as stable
     _CALIBRATE_STABLE_SECS = 1.0  # seconds of stability required before accepting
 
+    # Solve-rate throttling (#5): minimum wall-clock gap between solve attempts.
+    # Prevents hammering the CPU when frames arrive faster than solves complete.
+    _MIN_SOLVE_INTERVAL = 0.5  # seconds
+
+    # Stable-TRACKING skip (#7): if the last N solves are all within _STABLE_TOL
+    # degrees of each other, the scope isn't moving — drop to a slower rate.
+    _STABLE_WINDOW = 4         # number of consecutive solves to check
+    _STABLE_TOL_DEG = 0.08    # max RA/Dec spread (degrees) to consider stable
+    _STABLE_INTERVAL = 2.5    # seconds between solves when stable
+    _STABLE_RESUME_MOVE = 0.3  # movement (degrees) that resets to normal rate
+
     def _check_calibration(self, ra: float, dec: float, roll: float) -> bool:
         """Check if the scope has moved enough and stabilized to compute finder rotation.
 
@@ -196,6 +207,10 @@ class SolverThread:
     def _run(self) -> None:
         last_frame_id = -1
         first_success = True
+        last_solve_time = 0.0          # monotonic; throttle (#5)
+        recent_ra: list[float] = []    # stable-TRACKING tracking (#7)
+        recent_dec: list[float] = []
+        stable = False
 
         while not self._stop_event.is_set():
             # Exit if state is no longer appropriate (e.g. RECONNECTING, ERROR)
@@ -213,6 +228,19 @@ class SolverThread:
 
             last_frame_id = frame_id
 
+            # --- throttle: enforce minimum gap between solves (#5) ---
+            now = time.monotonic()
+            in_tracking = self._state_machine.state == EngineState.TRACKING
+            min_interval = (
+                self._STABLE_INTERVAL if (stable and in_tracking)
+                else self._MIN_SOLVE_INTERVAL
+            )
+            elapsed = now - last_solve_time
+            if elapsed < min_interval:
+                time.sleep(min(min_interval - elapsed, 0.1))
+                continue
+
+            last_solve_time = time.monotonic()
             try:
                 t_start = time.monotonic()
                 result = self._solver.solve_frame(jpeg_bytes)
@@ -270,6 +298,31 @@ class SolverThread:
                     self._consecutive_failures = 0
                 if self._audio and was_failing:
                     self._audio.on_failure_count_changed(0)
+
+                # Stable-TRACKING detection (#7): check if scope has stopped moving.
+                # Keep a rolling window of recent RA/Dec; if all within tolerance,
+                # switch to a slower solve rate to save CPU.
+                if in_tracking:
+                    recent_ra.append(ra)
+                    recent_dec.append(dec)
+                    if len(recent_ra) > self._STABLE_WINDOW:
+                        recent_ra.pop(0)
+                        recent_dec.pop(0)
+                    if len(recent_ra) == self._STABLE_WINDOW:
+                        ra_spread = max(recent_ra) - min(recent_ra)
+                        dec_spread = max(recent_dec) - min(recent_dec)
+                        was_stable = stable
+                        stable = ra_spread < self._STABLE_TOL_DEG and dec_spread < self._STABLE_TOL_DEG
+                        if stable and not was_stable:
+                            logger.info("Scope stable — reducing solve rate to %.1fs", self._STABLE_INTERVAL)
+                        elif not stable and was_stable:
+                            logger.info("Scope moving — resuming normal solve rate")
+                else:
+                    # Reset stability window when not in TRACKING
+                    recent_ra.clear()
+                    recent_dec.clear()
+                    stable = False
+
                 if first_success and self._state_machine.state == EngineState.WARMING_UP:
                     try:
                         self._state_machine.transition(EngineState.TRACKING)
@@ -295,6 +348,11 @@ class SolverThread:
                     matched_centroids=None,
                     image_size=result.get("image_size"),
                 )
+                # Solve failure could mean scope moved past recognition threshold;
+                # reset stability so we don't back off during recovery.
+                recent_ra.clear()
+                recent_dec.clear()
+                stable = False
                 with self._lock:
                     self._consecutive_failures += 1
                     new_count = self._consecutive_failures
