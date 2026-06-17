@@ -63,6 +63,7 @@ export function SkyDome({
       <Canvas
         camera={{ position: [4, 2.5, 4], fov: 50, near: 0.1, far: 100 }}
         style={{ background: "transparent" }}
+        frameloop="demand"
       >
         <Suspense fallback={null}>
           <SkyDomeCanvas
