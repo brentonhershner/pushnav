@@ -21,8 +21,10 @@ Per SPEC_ARCHITECTURE.md §4.2 and impl0.md §Phase 6.
 """
 
 import logging
+import math
 import threading
 import time
+from typing import Callable
 
 from evf.config.manager import ConfigManager
 from evf.engine.audio import AudioAlert
@@ -52,6 +54,8 @@ class SolverThread:
         state_machine: StateMachine,
         config: ConfigManager,
         audio: AudioAlert | None = None,
+        exposure_callback: Callable[[int], None] | None = None,
+        exposure_range_fn: Callable[[], tuple[int, int] | None] | None = None,
     ) -> None:
         self._solver = solver
         self._frame_buffer = frame_buffer
@@ -59,6 +63,8 @@ class SolverThread:
         self._state_machine = state_machine
         self._config = config
         self._audio = audio
+        self._exposure_callback = exposure_callback
+        self._exposure_range_fn = exposure_range_fn
         self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
         self._consecutive_failures = 0
@@ -143,6 +149,13 @@ class SolverThread:
     _STABLE_INTERVAL = 2.5    # seconds between solves when stable
     _STABLE_RESUME_MOVE = 0.3  # movement (degrees) that resets to normal rate
 
+    # Auto-exposure feedback (#4): adjust exposure to keep centroid count in
+    # a target band. Only kicks in when an exposure_callback is wired up.
+    _AE_TARGET_LOW = 10    # below this → increase exposure
+    _AE_TARGET_HIGH = 50   # above this → decrease exposure
+    _AE_STEP_LOG = 0.15    # proportional step in log-exposure space per adjustment
+    _AE_MIN_INTERVAL = 3.0  # seconds between adjustments (avoid oscillation)
+
     def _check_calibration(self, ra: float, dec: float, roll: float) -> bool:
         """Check if the scope has moved enough and stabilized to compute finder rotation.
 
@@ -204,6 +217,46 @@ class SolverThread:
         self._state_machine.transition(EngineState.WARMING_UP)
         return True
 
+    def _maybe_adjust_exposure(
+        self, centroid_count: int, current_exposure: int, last_adjust_time: float
+    ) -> tuple[int, float]:
+        """Proportionally adjust exposure to keep centroid count in target band.
+
+        Returns (new_exposure, new_last_adjust_time). If no adjustment is made,
+        returns (current_exposure, last_adjust_time) unchanged.
+        """
+        if self._exposure_callback is None or self._exposure_range_fn is None:
+            return current_exposure, last_adjust_time
+
+        exposure_range = self._exposure_range_fn()
+        if exposure_range is None:
+            return current_exposure, last_adjust_time
+
+        now = time.monotonic()
+        if now - last_adjust_time < self._AE_MIN_INTERVAL:
+            return current_exposure, last_adjust_time
+
+        exp_min, exp_max = exposure_range
+        if centroid_count < self._AE_TARGET_LOW:
+            # Too few stars — increase exposure
+            new_exp = int(current_exposure * math.exp(self._AE_STEP_LOG))
+        elif centroid_count > self._AE_TARGET_HIGH:
+            # Too many / sky glow — decrease exposure
+            new_exp = int(current_exposure * math.exp(-self._AE_STEP_LOG))
+        else:
+            return current_exposure, last_adjust_time
+
+        new_exp = max(exp_min, min(exp_max, new_exp))
+        if new_exp == current_exposure:
+            return current_exposure, last_adjust_time
+
+        logger.info(
+            "Auto-exposure: centroids=%d → exposure %d → %d",
+            centroid_count, current_exposure, new_exp,
+        )
+        self._exposure_callback(new_exp)
+        return new_exp, now
+
     def _run(self) -> None:
         last_frame_id = -1
         first_success = True
@@ -211,6 +264,8 @@ class SolverThread:
         recent_ra: list[float] = []    # stable-TRACKING tracking (#7)
         recent_dec: list[float] = []
         stable = False
+        last_ae_time = 0.0             # auto-exposure last adjustment (#4)
+        ae_exposure = -1               # tracks current exposure for AE loop
 
         while not self._stop_event.is_set():
             # Exit if state is no longer appropriate (e.g. RECONNECTING, ERROR)
@@ -226,9 +281,10 @@ class SolverThread:
                 time.sleep(0.01)
                 continue
 
-            last_frame_id = frame_id
-
-            # --- throttle: enforce minimum gap between solves (#5) ---
+            # --- throttle BEFORE marking frame as consumed (#5) ---
+            # Checking throttle here (not after last_frame_id update) means we
+            # re-evaluate the same frame on the next iteration; if a newer frame
+            # arrives while throttling we'll pick that one up instead.
             now = time.monotonic()
             in_tracking = self._state_machine.state == EngineState.TRACKING
             min_interval = (
@@ -239,6 +295,8 @@ class SolverThread:
             if elapsed < min_interval:
                 time.sleep(min(min_interval - elapsed, 0.1))
                 continue
+
+            last_frame_id = frame_id
 
             last_solve_time = time.monotonic()
             try:
@@ -255,6 +313,13 @@ class SolverThread:
                     result.get("RA"),
                     result.get("Matches"),
                     result.get("Prob"),
+                )
+                # Auto-exposure feedback (#4)
+                centroid_count = len(result.get("all_centroids") or [])
+                if ae_exposure < 0:
+                    ae_exposure = self._config.exposure or 1000
+                ae_exposure, last_ae_time = self._maybe_adjust_exposure(
+                    centroid_count, ae_exposure, last_ae_time
                 )
             except Exception as exc:
                 logger.error("Solve error: %s", exc)

@@ -555,6 +555,19 @@ class Engine:
         """Create solver thread object (not started until user enables tracking)."""
         if self._solver:
             self._audio = AudioAlert(enabled=self._config.audio_enabled)
+
+            def _get_exposure_range() -> tuple[int, int] | None:
+                """Look up exposure range from connected camera at call time."""
+                client = self._subprocess_mgr and self._subprocess_mgr.client
+                if not client:
+                    return None
+                c = {ctrl["id"]: ctrl for ctrl in (client.controls or [])}.get("exposure")
+                return (c["min"], c["max"]) if c else None
+
+            def _ae_set_exposure(value: int) -> None:
+                """Set exposure via engine; also cache for AE loop."""
+                self.set_control("exposure", value)
+
             self._solver_thread = SolverThread(
                 self._solver,
                 self._solver_frame_buffer,
@@ -562,6 +575,8 @@ class Engine:
                 self._state_machine,
                 self._config,
                 audio=self._audio,
+                exposure_callback=_ae_set_exposure,
+                exposure_range_fn=_get_exposure_range,
             )
             # Wire solver failure count into web server for audio event detection
             if self._webserver is not None:

@@ -93,16 +93,23 @@ class PlateSolver:
         img = Image.open(io.BytesIO(image_bytes)).convert("L")
         orig_h, orig_w = img.height, img.width
 
-        # Half-resolution copy for fast centroid extraction
+        # Downsample large frames for faster centroid extraction.
+        # Only applied when the image is large enough that the halved resolution
+        # still gives reliable centroid detection (≥960×540 after shrink).
+        # Smaller frames (e.g. 1280×720 offline test images) are solved as-is.
         ds = self._SOLVE_DOWNSAMPLE
-        small = img.resize((orig_w // ds, orig_h // ds), Image.BILINEAR)
+        if orig_w >= ds * 960 and orig_h >= ds * 540:
+            small = img.resize((orig_w // ds, orig_h // ds), Image.BILINEAR)
+        else:
+            small = img
+            ds = 1
 
         t0 = time.monotonic()
         centroids_small = get_centroids_from_image(small, **_CENTROID_PARAMS)
         t_extract = (time.monotonic() - t0) * 1000
 
         # Scale back to original resolution so overlay SVG viewBox aligns
-        centroids = centroids_small * ds if len(centroids_small) else centroids_small
+        centroids = centroids_small * ds if (ds > 1 and len(centroids_small)) else centroids_small
 
         result = self._t3.solve_from_centroids(
             centroids,
