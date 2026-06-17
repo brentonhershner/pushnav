@@ -36,6 +36,7 @@ DEFAULT_CONFIG = {
     "audio": {"enabled": True},
     "webserver": {"port": 8765},
     "location": {"latitude": None, "longitude": None},
+    "window": {"width": 1060, "height": 820},
 }
 
 
@@ -227,6 +228,22 @@ class ConfigManager:
             raise ValueError(f"longitude must be in [-180, 180], got {lon}")
         self.set("location", "latitude", float(lat))
         self.set("location", "longitude", float(lon))
+
+    @property
+    def window_width(self) -> int:
+        return self.get("window", "width")
+
+    @window_width.setter
+    def window_width(self, value: int) -> None:
+        self.set("window", "width", int(value))
+
+    @property
+    def window_height(self) -> int:
+        return self.get("window", "height")
+
+    @window_height.setter
+    def window_height(self, value: int) -> None:
+        self.set("window", "height", int(value))
 
     @property
     def path(self) -> Path:

@@ -181,14 +181,33 @@ def main() -> None:
     )
     title = f"PushNav {engine.app_version}"
 
-    webview.create_window(
+    saved_w = max(engine.config.window_width, _VP_MIN_WIDTH)
+    saved_h = max(engine.config.window_height, _VP_MIN_HEIGHT)
+    window = webview.create_window(
         title,
         target_url,
-        width=_VP_WIDTH,
-        height=_VP_HEIGHT,
+        width=saved_w,
+        height=saved_h,
         min_size=(_VP_MIN_WIDTH, _VP_MIN_HEIGHT),
         resizable=True,
     )
+
+    # Persist window size when the user resizes. The event fires on every
+    # pixel change during a drag, so we debounce with a 1s timer.
+    _resize_timer: threading.Timer | None = None
+
+    def _on_resized(width: int, height: int) -> None:
+        nonlocal _resize_timer
+        if _resize_timer is not None:
+            _resize_timer.cancel()
+        def _save():
+            engine.config.window_width = width
+            engine.config.window_height = height
+        _resize_timer = threading.Timer(1.0, _save)
+        _resize_timer.daemon = True
+        _resize_timer.start()
+
+    window.events.resized += _on_resized
     # On Linux, force pywebview's Qt backend (QtPy + PyQt6 + PyQt6-WebEngine,
     # pulled in by the pywebview[qt] extra in pyproject.toml). Without this,
     # pywebview probes GTK first and only falls through to Qt on ImportError —
