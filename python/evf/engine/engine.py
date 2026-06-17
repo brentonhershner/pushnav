@@ -766,10 +766,11 @@ class Engine:
     # -- camera control (§8.4) ------------------------------------------------
 
     def set_control(self, control_id: str, value: int) -> None:
-        """Send a camera control change and persist to config."""
+        """Send a camera control change, update the cached value, and persist to config."""
         client = self._subprocess_mgr.client if self._subprocess_mgr else None
         if client:
             client.set_control(control_id, value)
+            client.update_cached_control(control_id, value)
         # Persist to config
         if control_id == "exposure":
             self._config.exposure = value
