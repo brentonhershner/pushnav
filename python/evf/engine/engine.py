@@ -59,6 +59,21 @@ logger = logging.getLogger(__name__)
 _VERSION_PATH = version_json()
 
 
+def _log_space(lo: int, hi: int, n: int) -> list[int]:
+    """n log-spaced integer candidates between lo and hi (inclusive), deduped.
+
+    Log spacing covers a wide exposure/gain range (e.g. 1..10000) with few
+    samples while still resolving the low end, where the useful range for
+    faint-star astrophotography usually lives.
+    """
+    if hi <= lo:
+        return [lo]
+    lo_eff = max(lo, 1)
+    vals = np.unique(np.round(np.geomspace(lo_eff, hi, n)).astype(int))
+    vals = np.clip(vals, lo, hi)
+    return sorted(int(v) for v in set(vals.tolist()))
+
+
 def _read_app_version() -> str:
     """Read app_version string from VERSION.json at engine init.
 
@@ -629,8 +644,17 @@ class Engine:
             frame_data, _, _ = self._solver_frame_buffer.get()
             if frame_data is None:
                 self._sync_error = "No camera frame available"
+                logger.error("Sync solve: no frame in buffer")
                 return
+            logger.info("Sync solve: got frame (%d bytes), solving...", len(frame_data))
             result = self._solver.solve_frame(frame_data)
+            logger.info(
+                "Sync solve result: RA=%s Dec=%s matches=%s prob=%s centroids=%d image_size=%s",
+                result.get("RA"), result.get("Dec"),
+                result.get("Matches"), result.get("Prob"),
+                len(result.get("all_centroids") or []),
+                result.get("image_size"),
+            )
             if not PlateSolver.is_valid(
                 result, self._config.min_matches, self._config.max_prob
             ):
@@ -736,6 +760,110 @@ class Engine:
             self._config.exposure = value
         elif control_id == "gain":
             self._config.gain = value
+
+    def autotune_camera(self) -> dict:
+        """Sweep exposure/gain to maximize detected star count in the live feed.
+
+        Blocking — call from a worker thread, not the event loop. First
+        flattens the ISP's tone curve (min gamma/contrast/sharpness, neutral
+        brightness) since that curve crushes faint stars into the background
+        before exposure/gain even get a chance (see CLAUDE.md camera notes).
+        Then grid-searches exposure x gain, scoring each combo by how many
+        tetra3-detectable star centroids appear, penalized for a washed-out
+        (saturated) background so we don't just chase noise.
+        """
+        client = self._subprocess_mgr.client if self._subprocess_mgr else None
+        if client is None:
+            raise RuntimeError("Camera not connected")
+
+        controls = {c["id"]: c for c in (client.controls or [])}
+
+        def ctrl_range(cid: str) -> tuple[int, int] | None:
+            c = controls.get(cid)
+            return (c["min"], c["max"]) if c else None
+
+        # 1. Flatten the ISP tone curve so it isn't fighting the exposure/gain
+        #    sweep below.
+        for cid, pick in (
+            ("gamma", lambda lo, hi: lo),
+            ("contrast", lambda lo, hi: lo),
+            ("sharpness", lambda lo, hi: lo),
+            ("brightness", lambda lo, hi: (lo + hi) // 2),
+        ):
+            r = ctrl_range(cid)
+            if r:
+                self.set_control(cid, pick(*r))
+
+        exposure_range = ctrl_range("exposure")
+        gain_range = ctrl_range("gain")
+        if not exposure_range or not gain_range:
+            raise RuntimeError("Camera does not report exposure/gain ranges")
+
+        exposure_candidates = _log_space(*exposure_range, 6)
+        gain_candidates = _log_space(*gain_range, 5)
+
+        best: tuple[float, int, int, int] | None = None
+        for exposure in exposure_candidates:
+            self.set_control("exposure", exposure)
+            for gain in gain_candidates:
+                self.set_control("gain", gain)
+                jpeg = self._await_fresh_frame()
+                if jpeg is None:
+                    continue
+                score, num_stars, saturated = self._score_frame_for_autotune(jpeg)
+                logger.info(
+                    "Autotune: exposure=%d gain=%d -> stars=%d saturated=%.0f%% score=%.1f",
+                    exposure, gain, num_stars, saturated * 100, score,
+                )
+                if best is None or score > best[0]:
+                    best = (score, exposure, gain, num_stars)
+
+        if best is None:
+            raise RuntimeError("Autotune could not capture any frames")
+
+        _, best_exposure, best_gain, best_stars = best
+        self.set_control("exposure", best_exposure)
+        self.set_control("gain", best_gain)
+        logger.info(
+            "Autotune complete: exposure=%d gain=%d (%d stars detected)",
+            best_exposure, best_gain, best_stars,
+        )
+        return {
+            "exposure": best_exposure,
+            "gain": best_gain,
+            "stars_detected": best_stars,
+        }
+
+    def _await_fresh_frame(self, settle: float = 0.35, timeout: float = 2.0) -> bytes | None:
+        """Wait for a frame captured after a just-changed control takes effect."""
+        _, _, start_id = self._frame_buffer.get()
+        time.sleep(settle)
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            jpeg, _, frame_id = self._frame_buffer.get()
+            if jpeg is not None and frame_id > start_id:
+                return jpeg
+            time.sleep(0.05)
+        jpeg, _, _ = self._frame_buffer.get()
+        return jpeg
+
+    @staticmethod
+    def _score_frame_for_autotune(jpeg_bytes: bytes) -> tuple[float, int, float]:
+        """Return (score, star_count, saturated_fraction) for an autotune candidate."""
+        from PIL import Image
+        from tetra3 import get_centroids_from_image
+
+        from evf.solver.solver import _CENTROID_PARAMS
+
+        img = Image.open(io.BytesIO(jpeg_bytes)).convert("L")
+        arr = np.asarray(img)
+        saturated = float(np.mean(arr >= 250))
+        centroids = get_centroids_from_image(img, **_CENTROID_PARAMS)
+        num_stars = len(centroids)
+        # A washed-out background can trip the extractor on noise, so
+        # penalize saturation heavily rather than just counting blobs.
+        score = num_stars - (saturated * 200.0)
+        return score, num_stars, saturated
 
     # -- shutdown (§8.5) ------------------------------------------------------
 

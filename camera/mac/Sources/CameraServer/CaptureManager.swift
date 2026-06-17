@@ -198,8 +198,8 @@ class CaptureManager: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     }
 
     private func configureFormat(device: AVCaptureDevice) {
-        let targetWidth: Int32 = 1280
-        let targetHeight: Int32 = 720
+        let targetWidth: Int32 = 1920
+        let targetHeight: Int32 = 1080
 
         // Log all available formats for diagnostics
         print("Available formats:")

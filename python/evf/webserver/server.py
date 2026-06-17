@@ -50,9 +50,12 @@ _MJPEG_BOUNDARY = b"frame"
 _MJPEG_INTERVAL = 0.1  # 10 Hz
 
 # Camera image geometry — must match the React UI's overlay assumptions.
-_FOV_H = 8.86   # horizontal FOV in degrees
-_IMG_W = 1280
-_IMG_H = 720
+# IMX462 (1/2.8", 2.9µm) + 25mm lens, assuming UVC driver downscales
+# 1920×1080 → 1280×720 (preserving FOV). If the driver crops instead,
+# the true value is ~8.5° — adjust here if the goto arrow is visibly off.
+_FOV_H = 12.7   # horizontal FOV in degrees
+_IMG_W = 1920
+_IMG_H = 1080
 
 
 class EngineActions(Protocol):
@@ -70,6 +73,7 @@ class EngineActions(Protocol):
     def inject_sample(self, name: str | None) -> None: ...
     def inject_target(self, ra_deg: float, dec_deg: float) -> None: ...
     def capture_frame(self): ...  # returns Path | None
+    def autotune_camera(self) -> dict: ...
     def set_min_matches(self, value: int) -> None: ...
     def set_max_prob(self, value: float) -> None: ...
     def set_stack_count(self, value: int) -> None: ...
@@ -236,6 +240,7 @@ class WebServer:
         app.router.add_post("/api/calibration/use-previous", self._api_use_previous_calibration)
         app.router.add_post("/api/camera/retry", self._api_camera_retry)
         app.router.add_post("/api/control", self._api_set_control)
+        app.router.add_post("/api/camera/autotune", self._api_camera_autotune)
         app.router.add_post("/api/goto/clear", self._api_goto_clear)
         app.router.add_post("/api/goto/set", self._api_goto_set)
         app.router.add_post("/api/settings", self._api_settings)
@@ -511,6 +516,19 @@ class WebServer:
         return await self._handle_api(
             request, lambda: self._actions.inject_target(ra, dec),
         )
+
+    async def _api_camera_autotune(self, request):
+        """Sweep camera controls to maximize star detectability. Returns the
+        chosen values + star count, or a 409 with an error message if the
+        sweep couldn't complete (e.g. camera disconnected mid-sweep)."""
+        if self._actions is None:
+            return web.Response(status=503, text="No actions wired")
+        try:
+            result = await asyncio.to_thread(self._actions.autotune_camera)
+        except Exception as exc:
+            logger.exception("autotune_camera failed: %s", exc)
+            return web.json_response({"error": str(exc)}, status=409)
+        return web.json_response(result)
 
     async def _api_dev_capture_frame(self, request):
         """Save the latest frame to ~/Downloads. Returns 200 + JSON {path}."""

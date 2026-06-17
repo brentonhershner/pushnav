@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { api } from "@/lib/api";
 import type { ControlDescriptor } from "@/lib/types";
@@ -15,6 +17,22 @@ interface Props {
 }
 
 export function CameraControls({ controls }: Props) {
+  const [autotuning, setAutotuning] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
+
+  async function runAutotune() {
+    setAutotuning(true);
+    setStatus(null);
+    try {
+      const result = await api.autotuneCamera();
+      setStatus(`Done — ${result.stars_detected} star(s) detected`);
+    } catch (e) {
+      setStatus(e instanceof Error ? e.message : "Autotune failed");
+    } finally {
+      setAutotuning(false);
+    }
+  }
+
   return (
     <Card>
       <CardHeader>
@@ -24,6 +42,18 @@ export function CameraControls({ controls }: Props) {
         {controls.map((c) => (
           <ControlRow key={c.id ?? c.name} control={c} />
         ))}
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full"
+          disabled={autotuning}
+          onClick={runAutotune}
+        >
+          {autotuning ? "Auto-tuning…" : "Auto-tune for stars"}
+        </Button>
+        {status && (
+          <p className="text-xs text-muted-foreground text-center">{status}</p>
+        )}
       </CardContent>
     </Card>
   );

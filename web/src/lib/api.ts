@@ -23,6 +23,19 @@ export const api = {
     return await resp.json();
   },
   setControl: (name: string, value: number) => post("/api/control", { name, value }),
+  autotuneCamera: async (): Promise<{
+    exposure: number;
+    gain: number;
+    stars_detected: number;
+    error?: string;
+  }> => {
+    const resp = await fetch("/api/camera/autotune", { method: "POST" });
+    const data = await resp.json();
+    if (resp.status >= 400) {
+      throw new Error(data.error ?? `POST /api/camera/autotune → ${resp.status}`);
+    }
+    return data;
+  },
   clearGoto: () => post("/api/goto/clear"),
   setGoto: (ra_deg: number, dec_deg: number) =>
     post("/api/goto/set", { ra_deg, dec_deg }),

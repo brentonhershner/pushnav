@@ -217,11 +217,16 @@ class SolverThread:
                 t_start = time.monotonic()
                 result = self._solver.solve_frame(jpeg_bytes)
                 t_total = (time.monotonic() - t_start) * 1000
-                logger.debug(
-                    "Solve frame %d: %.0fms (extract=%.0fms solve=%.0fms)",
+                logger.info(
+                    "Solve frame %d: %.0fms (extract=%.0fms solve=%.0fms) "
+                    "centroids=%d RA=%s matches=%s prob=%s",
                     frame_id, t_total,
                     result.get("T_extract", 0),
                     result.get("T_solve", 0),
+                    len(result.get("all_centroids") or []),
+                    result.get("RA"),
+                    result.get("Matches"),
+                    result.get("Prob"),
                 )
             except Exception as exc:
                 logger.error("Solve error: %s", exc)

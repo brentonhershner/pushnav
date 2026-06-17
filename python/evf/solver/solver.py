@@ -38,15 +38,26 @@ _DATABASE_PATH = database_path()
 
 # Centroid extraction parameters (passed to get_centroids_from_image).
 _CENTROID_PARAMS = dict(
-    sigma=2,
+    sigma=3,        # PiFinder uses 8 on raw 12-bit data; UVC JPEG output has
+                    # lower local SNR after ISP gamma compression so we need a
+                    # lower threshold — 3 finds real stars while the plate-solve
+                    # pattern matcher rejects any false centroids
     filtsize=15,
     max_area=2000,  # Allow bright extended stars (M45, Capella); was 500
 )
 
 # Solve parameters proven in prototyping (impl0.md §6.2, solve_hip8.py).
+#
+# FOV is for the Arducam IMX462 (1/2.8" sensor, 2.9µm pixels, 1920×1080
+# native) with a 25mm f/2.0 lens. Whether the UVC driver downscales or
+# center-crops to deliver 1280×720 is firmware-dependent:
+#   - Downscale: FOV unchanged at 2·atan(5.57mm / 50mm) ≈ 12.7°
+#   - Center-crop: FOV narrows to 2·atan(3.71mm / 50mm) ≈ 8.5°
+# fov_max_error=4.0 brackets both cases so the solver works regardless.
+# The original 8.86° was correct for the old OV9281 camera (1/4", 3µm).
 _SOLVE_PARAMS = dict(
-    fov_estimate=8.86,  # Horizontal FOV in degrees (NOT diagonal)
-    fov_max_error=1.5,
+    fov_estimate=12.0,  # degrees — IMX462 + 25mm, full-sensor downscale
+    fov_max_error=4.0,  # wide to cover crop vs downscale uncertainty
     match_radius=0.01,
     pattern_checking_stars=30,
     match_threshold=0.1,
