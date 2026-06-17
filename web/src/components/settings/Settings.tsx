@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { useNumberInput } from "@/hooks/useNumberInput";
 import type { EnginePayload } from "@/lib/types";
 
 const DEFAULT_SHOW_STARS = false;
@@ -21,6 +22,15 @@ interface Props {
 }
 
 export function Settings({ state, showStars, setShowStars, className }: Props) {
+  const minMatchesProps = useNumberInput(state.min_matches, (v) =>
+    api.setAdvanced({ min_matches: v }).catch(console.error)
+  );
+  const maxProbProps = useNumberInput(state.max_prob, (v) =>
+    api.setAdvanced({ max_prob: v }).catch(console.error)
+  );
+  const stackCountProps = useNumberInput(state.stack_count, (v) =>
+    api.setAdvanced({ stack_count: v }).catch(console.error)
+  );
   function resetToDefaults() {
     setShowStars(DEFAULT_SHOW_STARS);
     api
@@ -64,14 +74,8 @@ export function Settings({ state, showStars, setShowStars, className }: Props) {
               min={3}
               max={50}
               step={1}
-              defaultValue={state.min_matches}
-              key={`min-${state.min_matches}`}
               className="w-20 h-8"
-              onBlur={(e) =>
-                api.setAdvanced({
-                  min_matches: Number(e.currentTarget.value),
-                })
-              }
+              {...minMatchesProps}
             />
           </Row>
           <p className="text-xs text-muted-foreground leading-snug">
@@ -83,14 +87,8 @@ export function Settings({ state, showStars, setShowStars, className }: Props) {
               min={0}
               max={1}
               step={0.01}
-              defaultValue={state.max_prob}
-              key={`max-${state.max_prob}`}
               className="w-20 h-8"
-              onBlur={(e) =>
-                api.setAdvanced({
-                  max_prob: Number(e.currentTarget.value),
-                })
-              }
+              {...maxProbProps}
             />
           </Row>
           <p className="text-xs text-muted-foreground leading-snug">
@@ -102,14 +100,8 @@ export function Settings({ state, showStars, setShowStars, className }: Props) {
               min={1}
               max={32}
               step={1}
-              defaultValue={state.stack_count}
-              key={`stack-${state.stack_count}`}
               className="w-20 h-8"
-              onBlur={(e) =>
-                api.setAdvanced({
-                  stack_count: Number(e.currentTarget.value),
-                })
-              }
+              {...stackCountProps}
             />
           </Row>
           <p className="text-xs text-muted-foreground leading-snug">
