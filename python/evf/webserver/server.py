@@ -47,7 +47,7 @@ logger = logging.getLogger(__name__)
 _MAX_WS_CLIENTS = 10  # cap concurrent WebSocket connections
 _MAX_MJPEG_CLIENTS = 4
 _MJPEG_BOUNDARY = b"frame"
-_MJPEG_INTERVAL = 0.1  # 10 Hz
+_MJPEG_INTERVAL = 0.2  # 5 Hz — saves ~50% stream CPU vs 10 Hz
 
 # Camera image geometry — must match the React UI's overlay assumptions.
 # IMX462 (1/2.8", 2.9µm) + 25mm lens, assuming UVC driver downscales
