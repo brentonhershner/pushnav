@@ -25,6 +25,7 @@ function useLocalStorageBool(key: string, defaultValue: boolean) {
 export default function App() {
   const state = useEngineState();
   const [showStars, setShowStars] = useLocalStorageBool("pushnav.show_stars", false);
+  const [redFilter, setRedFilter] = useLocalStorageBool("pushnav.red_filter", true);
   const [view, setView] = useView();
 
   return (
@@ -42,7 +43,7 @@ export default function App() {
             // Right column: scrollable settings sidebar.
             <div className="grid md:grid-cols-3 gap-2 px-2 pt-3 pb-2 w-full flex-1 min-h-0">
               <div className="md:col-span-2 flex flex-col gap-2 min-h-0">
-                <LiveView state={state} showStars={showStars} />
+                <LiveView state={state} showStars={showStars} redFilter={redFilter} />
                 <StepIndicator state={state} />
                 <div className="flex-1 min-h-0 overflow-y-auto [&>*]:h-full">
                   <Wizard state={state} />
@@ -53,6 +54,8 @@ export default function App() {
                   state={state}
                   showStars={showStars}
                   setShowStars={setShowStars}
+                  redFilter={redFilter}
+                  setRedFilter={setRedFilter}
                   className="flex-1"
                 />
               </div>

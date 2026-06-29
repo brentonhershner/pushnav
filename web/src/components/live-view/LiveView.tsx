@@ -8,11 +8,12 @@ import { LocationOverlay } from "./LocationOverlay";
 interface Props {
   state: EnginePayload;
   showStars: boolean;
+  redFilter: boolean;
 }
 
 const NO_STARS_STATES = ["CALIBRATE", "WARMING_UP", "TRACKING"];
 
-export function LiveView({ state, showStars }: Props) {
+export function LiveView({ state, showStars, redFilter }: Props) {
   const { image_w, image_h } = state;
   const noStars =
     NO_STARS_STATES.includes(state.state) && state.failures >= 3;
@@ -27,6 +28,9 @@ export function LiveView({ state, showStars }: Props) {
         alt="Live camera frame"
         className="absolute inset-0 w-full h-full object-cover"
       />
+      {redFilter && (
+        <div className="absolute inset-0 bg-red-600 mix-blend-multiply pointer-events-none" />
+      )}
       <svg
         className="absolute inset-0 w-full h-full"
         viewBox={`0 0 ${image_w} ${image_h}`}

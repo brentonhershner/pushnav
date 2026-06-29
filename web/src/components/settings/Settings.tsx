@@ -24,10 +24,12 @@ interface Props {
   state: EnginePayload;
   showStars: boolean;
   setShowStars: (v: boolean) => void;
+  redFilter: boolean;
+  setRedFilter: (v: boolean) => void;
   className?: string;
 }
 
-export function Settings({ state, showStars, setShowStars, className }: Props) {
+export function Settings({ state, showStars, setShowStars, redFilter, setRedFilter, className }: Props) {
   const [autotuning, setAutotuning] = useState(false);
   const [autotuneStatus, setAutotuneStatus] = useState<string | null>(null);
   const [showQR, setShowQR] = useState(false);
@@ -75,6 +77,9 @@ export function Settings({ state, showStars, setShowStars, className }: Props) {
       <CardContent className="flex-1 overflow-y-auto space-y-3 pb-4">
 
         {/* Display */}
+        <Row label="Red filter (night vision)">
+          <Switch checked={redFilter} onCheckedChange={setRedFilter} />
+        </Row>
         <Row label="Show detected stars">
           <Switch checked={showStars} onCheckedChange={setShowStars} />
         </Row>
